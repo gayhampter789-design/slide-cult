@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { createWorld } from './world.js';
 import { CARS, createCar, updateCarModel } from './car.js';
 import { Controls } from './controls.js';
+import { MultiplayerClient } from './multiplayer.js';
 
 const $ = id => document.getElementById(id);
 const defaults = {inputMode:'auto',steerSensitivity:70,deadzone:8,wheelSteerAxis:0,wheelThrottleAxis:2,wheelBrakeAxis:3,invertThrottle:false,invertBrake:false,handling:'balanced',transmission:'auto',camera:'chase',graphics:'high',assists:true,sound:true};
@@ -9,7 +10,9 @@ const saved = (()=>{try{return JSON.parse(localStorage.getItem('slidecult-save')
 const settings = {...defaults,...(saved.settings||{})};
 const progress = {cash:saved.cash??25000,owned:saved.owned||['s15'],carId:saved.carId||'s15',paint:saved.paint||'#c8d3e0',upgrades:saved.upgrades||{}};
 let currentCarDef=CARS.find(c=>c.id===progress.carId)||CARS[0];
-let carModel=null, scene, camera, renderer, world, controls;
+let carModel=null, scene, camera, renderer, world, controls, multiplayer;
+const remotePlayers = new Map();
+let myNetworkPlayer = null;
 let screen='menu', paused=false, running=false, lastTime=0, frame=0;
 let state={x:0,z:0,yaw:0,vx:0,vz:0,steer:0,yawRate:0,gear:1,rpm:900,boost:1};
 let runScore=0,sessionScore=0,driftMultiplier=1,driftTimer=0,bankTimer=0,sessionCash=0;
@@ -36,9 +39,21 @@ function init3D(){
   activeGraphics();
   window.addEventListener('resize',()=>{camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);activeGraphics();});
   controls=new Controls(settings);
+  setupMultiplayer();
   requestAnimationFrame(animate);
 }
-function placeCarAtSpawn(){state.x=world.spawn.x;state.z=world.spawn.z;state.yaw=world.spawn.yaw;state.vx=0;state.vz=0;state.steer=0;state.yawRate=0;state.gear=1;state.rpm=900;state.boost=1;if(carModel){carModel.position.set(state.x,0,state.z);carModel.rotation.set(0,state.yaw,0);}}
+function placeCarAtSpawn(){
+  let spawn = world.spawn;
+  if (multiplayer?.connected && myNetworkPlayer?.id) {
+    const slot = Math.max(0, Math.min(7, Number(myNetworkPlayer.slot) || 0));
+    const t = slot * .0042;
+    const point = world.track.getPointAt(t);
+    const tangent = world.track.getTangentAt(t).normalize();
+    spawn = { x: point.x, z: point.z, yaw: Math.atan2(-tangent.x, -tangent.z) };
+  }
+  state.x=spawn.x;state.z=spawn.z;state.yaw=spawn.yaw;state.vx=0;state.vz=0;state.steer=0;state.yawRate=0;state.gear=1;state.rpm=900;state.boost=1;
+  if(carModel){carModel.position.set(state.x,0,state.z);carModel.rotation.set(0,state.yaw,0);}
+}
 function rebuildCar(reset=false){
   if(carModel)scene.remove(carModel);
   carModel=createCar(progress.paint||currentCarDef.body);scene.add(carModel);
@@ -140,9 +155,137 @@ function startAudio(){
   try{audioCtx=new (window.AudioContext||window.webkitAudioContext)();engineOsc=audioCtx.createOscillator();engineOsc.type='sawtooth';engineGain=audioCtx.createGain();engineGain.gain.value=.018;const filter=audioCtx.createBiquadFilter();filter.type='lowpass';filter.frequency.value=520;engineOsc.connect(filter).connect(engineGain).connect(audioCtx.destination);engineOsc.start();skidOsc=audioCtx.createOscillator();skidOsc.type='triangle';skidGain=audioCtx.createGain();skidGain.gain.value=0;skidOsc.connect(skidGain).connect(audioCtx.destination);skidOsc.start();}catch(e){console.warn('Audio unavailable',e);}
 }
 function updateAudio(speed,drifting){if(settings.sound&&!audioCtx)startAudio();if(!audioCtx)return;if(audioCtx.state==='suspended')audioCtx.resume();if(engineOsc){engineOsc.frequency.setTargetAtTime(55+speed*5.8,audioCtx.currentTime,.08);engineGain.gain.setTargetAtTime(settings.sound ? .018 : 0,audioCtx.currentTime,.08);}if(skidGain)skidGain.gain.setTargetAtTime(settings.sound && drifting ? .025 : 0,audioCtx.currentTime,.08);}
+function setupMultiplayer(){
+  multiplayer = new MultiplayerClient({
+    onStatus: message => {
+      const connected = multiplayer?.connected;
+      $('mp-status').textContent = String(message).toUpperCase();
+      $('mp-status-dot').classList.toggle('online', !!connected);
+      $('mp-leave').disabled = !connected;
+      $('mp-copy-room').disabled = !connected;
+      if (!connected && message === 'Disconnected') $('mp-current-room').textContent = '—';
+    },
+    onMessage: message => {
+      if (message.type === 'welcome') {
+        myNetworkPlayer = message.self;
+        $('mp-current-room').textContent = multiplayer.roomCode;
+        $('mp-room-code').value = multiplayer.roomCode;
+        message.players.forEach(setRemotePlayer);
+        renderPlayersList();
+        setToast(`JOINED ROOM ${multiplayer.roomCode}`);
+      } else if (message.type === 'player-joined') {
+        setRemotePlayer(message.player);
+        renderPlayersList();
+        setToast(`${message.player.name} JOINED THE ROOM`);
+      } else if (message.type === 'player-state') {
+        setRemotePlayer(message.player);
+      } else if (message.type === 'player-left') {
+        removeRemotePlayer(message.id);
+        renderPlayersList();
+        setToast(`${message.name || 'A DRIVER'} LEFT`);
+      } else if (message.type === 'disconnected') {
+        myNetworkPlayer = null;
+        for (const id of [...remotePlayers.keys()]) removeRemotePlayer(id);
+        renderPlayersList();
+        $('mp-current-room').textContent = '—';
+        $('mp-status-dot').classList.remove('online');
+        $('mp-leave').disabled = true;
+        $('mp-copy-room').disabled = true;
+      }
+    }
+  });
+  $('mp-server-url').value = localStorage.getItem('slidecult-mp-server') || '';
+  $('mp-player-name').value = localStorage.getItem('slidecult-player-name') || 'DRIFTER';
+}
+function setRemotePlayer(player){
+  if (!player?.id || player.id === myNetworkPlayer?.id) return;
+  let remote = remotePlayers.get(player.id);
+  if (!remote) {
+    remote = { info: player, model: null, target: player.state || null, current: player.state || null };
+    remotePlayers.set(player.id, remote);
+  } else {
+    remote.info = player;
+    if (player.state) remote.target = player.state;
+  }
+  if (remote.model && player.color && remote.model.userData?.paint) remote.model.userData.paint.color.set(player.color);
+  if (!remote.model && player.state && scene) {
+    remote.model = createCar(player.color || '#c8d3e0');
+    remote.model.scale.setScalar(1.02);
+    scene.add(remote.model);
+    remote.model.position.set(player.state.x, 0, player.state.z);
+    remote.model.rotation.y = player.state.yaw || 0;
+    remote.current = { ...player.state };
+  }
+  renderPlayersList();
+}
+function removeRemotePlayer(id){
+  const remote = remotePlayers.get(id);
+  if (remote?.model && scene) {
+    scene.remove(remote.model);
+    remote.model.traverse(obj => { obj.geometry?.dispose?.(); if (Array.isArray(obj.material)) obj.material.forEach(m=>m.dispose?.()); else obj.material?.dispose?.(); });
+  }
+  remotePlayers.delete(id);
+}
+function renderPlayersList(){
+  const list = $('mp-players-list');
+  if (!list) return;
+  list.innerHTML = '';
+  const entries = [];
+  if (myNetworkPlayer) entries.push({ ...myNetworkPlayer, isYou: true });
+  for (const remote of remotePlayers.values()) entries.push(remote.info);
+  $('mp-player-count').textContent = `${entries.length} / 8`;
+  if (!entries.length) { list.innerHTML = '<span class="players-empty">No room connected yet.</span>'; return; }
+  for (const player of entries) {
+    const row = document.createElement('div'); row.className = 'player-row';
+    const swatch = document.createElement('i'); swatch.style.background = /^#[0-9a-f]{6}$/i.test(player.color || '') ? player.color : '#d8ff45';
+    const name = document.createElement('span'); name.textContent = player.name || 'DRIFTER';
+    const tag = document.createElement('small'); tag.textContent = player.isYou ? 'YOU' : (player.carId || 'DRIVER').toUpperCase();
+    row.append(swatch, name, tag); list.append(row);
+  }
+}
+function randomRoomCode(){
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = new Uint8Array(6); crypto.getRandomValues(bytes);
+  return Array.from(bytes, value => alphabet[value % alphabet.length]).join('');
+}
+async function connectMultiplayer(roomCode){
+  const serverUrl = $('mp-server-url').value.trim();
+  const name = $('mp-player-name').value.trim() || 'DRIFTER';
+  localStorage.setItem('slidecult-mp-server', serverUrl);
+  localStorage.setItem('slidecult-player-name', name);
+  try {
+    $('mp-create').disabled = true; $('mp-join').disabled = true;
+    await multiplayer.connect({ serverUrl, roomCode, name, carId: currentCarDef.id, color: progress.paint || currentCarDef.body });
+  } catch (error) {
+    setToast(error.message || 'MULTIPLAYER CONNECTION FAILED');
+    $('mp-status').textContent = 'CONNECTION FAILED';
+  } finally {
+    $('mp-create').disabled = false; $('mp-join').disabled = false;
+  }
+}
+function updateRemoteCars(dt){
+  const blend = 1 - Math.pow(.0008, dt);
+  for (const remote of remotePlayers.values()) {
+    if (!remote.model || !remote.target) continue;
+    if (!remote.current) remote.current = { ...remote.target };
+    const target = remote.target;
+    remote.current.x += (target.x - remote.current.x) * blend;
+    remote.current.z += (target.z - remote.current.z) * blend;
+    const angleDiff = Math.atan2(Math.sin(target.yaw - remote.current.yaw), Math.cos(target.yaw - remote.current.yaw));
+    remote.current.yaw += angleDiff * blend;
+    remote.model.position.set(remote.current.x, 0, remote.current.z);
+    remote.model.rotation.y = remote.current.yaw;
+    updateCarModel(remote.model, target.steer || 0, target.speed || 0, 0);
+  }
+}
+function sendMultiplayerState(){
+  if (!multiplayer?.connected || screen !== 'drive') return;
+  multiplayer.sendState({ x: state.x, z: state.z, yaw: state.yaw, steer: state.steer, speed: Math.hypot(state.vx, state.vz), carId: currentCarDef.id, color: progress.paint || currentCarDef.body });
+}
+
 function showScreen(next){screen=next;['main-menu','garage-screen','pause-screen'].forEach(id=>$(id).classList.toggle('hidden',id!==({menu:'main-menu',garage:'garage-screen',pause:'pause-screen'}[next])));const playing=next==='drive';$('topbar').classList.toggle('hidden-ui',!playing);$('hud').classList.toggle('hidden-ui',!playing);$('game-hint').classList.toggle('hidden-ui',!playing||settings.inputMode==='touch');$('touch-controls').classList.toggle('hidden-ui',!playing||!touchShouldShow());$('touch-controls').classList.toggle('enabled',playing&&touchShouldShow());}
 function touchShouldShow(){return settings.inputMode==='touch'||(settings.inputMode==='auto'&&navigator.maxTouchPoints>0&&window.matchMedia('(pointer: coarse)').matches);}
-function play(){placeCarAtSpawn();runScore=0;driftTimer=0;sessionScore=0;sessionCash=0;showScreen('drive');paused=false;running=true;startAudio();$('pause-button').textContent='Ⅱ';}
+function play(){placeCarAtSpawn();runScore=0;driftTimer=0;sessionScore=0;sessionCash=0;showScreen('drive');paused=false;running=true;startAudio();$('pause-button').textContent='Ⅱ';sendMultiplayerState();}
 function pause(){if(screen!=='drive')return;showScreen('pause');paused=true;$('pause-button').textContent='▶';}
 function resume(){showScreen('drive');paused=false;$('pause-button').textContent='Ⅱ';}
 function returnToMenu(){showScreen('menu');paused=false;running=false;placeCarAtSpawn();}
@@ -173,11 +316,19 @@ function applySettings(){
 function animate(now){requestAnimationFrame(animate);const dt=Math.min(.035,(now-lastTime)/1000||.016);lastTime=now;frame++;
   if(screen==='drive'&&!paused){const input=controls.read();if(input.shiftUp&&settings.transmission==='manual')state.gear=Math.min(6,(Number(state.gear)||1)+1);if(input.shiftDown&&settings.transmission==='manual')state.gear=Math.max(1,(Number(state.gear)||1)-1);physics(input,dt);updateAudio(Math.hypot(state.vx,state.vz),driftTimer>0);}
   else if(screen==='menu'&&carModel){state.yaw+=dt*.09;carModel.rotation.y=state.yaw;}
-  updateSmoke(dt);if(carModel)updateCamera(dt);renderer.render(scene,camera);
+  sendMultiplayerState();updateRemoteCars(dt);updateSmoke(dt);if(carModel)updateCamera(dt);renderer.render(scene,camera);
 }
 
 // UI wiring.
 $('play-button').addEventListener('click',play);$('garage-drive').addEventListener('click',play);$('garage-button').addEventListener('click',openGarage);$('garage-close').addEventListener('click',returnToMenu);$('garage-close').addEventListener('keydown',e=>{if(e.key==='Enter')returnToMenu();});$('settings-open').addEventListener('click',openSettings);$('hud-settings').addEventListener('click',openSettings);$('settings-close').addEventListener('click',closeSettings);$('settings-done').addEventListener('click',()=>{applySettings();closeSettings();});$('pause-button').addEventListener('click',()=>screen==='drive'?pause():resume());$('resume-button').addEventListener('click',resume);$('pause-garage').addEventListener('click',openGarage);$('pause-menu').addEventListener('click',returnToMenu);$('hud-garage').addEventListener('click',openGarage);window.addEventListener('slidecult:pause',()=>{if(screen==='drive')pause();else if(screen==='pause')resume();});
+$('multiplayer-open').addEventListener('click',()=>{$('multiplayer-modal').classList.remove('hidden');if(multiplayer?.connected){$('mp-current-room').textContent=multiplayer.roomCode;$('mp-status').textContent=`CONNECTED TO ROOM ${multiplayer.roomCode}`;}});
+$('multiplayer-close').addEventListener('click',()=>$('multiplayer-modal').classList.add('hidden'));
+$('multiplayer-modal').addEventListener('click',e=>{if(e.target===$('multiplayer-modal'))$('multiplayer-modal').classList.add('hidden');});
+$('mp-create').addEventListener('click',()=>{const code=randomRoomCode();$('mp-room-code').value=code;connectMultiplayer(code);});
+$('mp-join').addEventListener('click',()=>connectMultiplayer($('mp-room-code').value));
+$('mp-room-code').addEventListener('input',e=>{e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8);});
+$('mp-leave').addEventListener('click',()=>{multiplayer?.disconnect();});
+$('mp-copy-room').addEventListener('click',async()=>{if(!multiplayer?.roomCode)return;try{await navigator.clipboard.writeText(multiplayer.roomCode);setToast('ROOM CODE COPIED');}catch{setToast(`ROOM CODE: ${multiplayer.roomCode}`);}});
 $('paint-select').addEventListener('change',e=>{progress.paint=e.target.value;if(carModel?.userData?.paint)carModel.userData.paint.color.set(progress.paint);save();});
 $('input-mode').addEventListener('change',()=>{settings.inputMode=$('input-mode').value;$('wheel-settings').style.display=settings.inputMode==='wheel'?'block':'none';applySettings();});
 ['steer-sensitivity','deadzone'].forEach(id=>$(id).addEventListener('input',()=>{$(`${id}-value`).textContent=`${$(id).value}%`;applySettings();}));
