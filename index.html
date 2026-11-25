@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#090b12" />
+  <meta name="description" content="SLIDE CULT — a browser-based 3D drift playground." />
+  <title>SLIDE CULT — Drift Playground</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/styles.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="game-shell">
+    <div id="game-stage" aria-label="3D driving game">
+      <div id="loading-screen" class="loading-screen">
+        <div class="loading-mark">SC<span>///</span></div>
+        <div class="loading-title">BUILDING YOUR PLAYGROUND</div>
+        <div class="loading-track"><i id="load-progress"></i></div>
+        <div id="loading-message" class="muted">Preparing the circuit…</div>
+      </div>
+
+      <div id="topbar" class="topbar hidden-ui">
+        <a class="brand" href="#" aria-label="Slide Cult home">SLIDE<span>CULT</span><b>///</b></a>
+        <div class="topbar-right">
+          <div class="cash-pill"><span class="cash-icon">$</span><strong id="cash-value">25,000</strong><small>CASH</small></div>
+          <button class="icon-button" id="settings-open" title="Settings" aria-label="Settings">⚙</button>
+          <button class="icon-button" id="pause-button" title="Pause" aria-label="Pause">Ⅱ</button>
+        </div>
+      </div>
+
+      <section id="main-menu" class="screen-panel">
+        <div class="menu-copy">
+          <div class="eyebrow"><span class="eyebrow-line"></span> THE ART OF GOING SIDEWAYS</div>
+          <h1>SLIDE<br><em>CULT.</em></h1>
+          <p class="hero-sub">Find your line. Build your setup.<br>Leave nothing but tyre smoke.</p>
+          <div class="menu-actions">
+            <button id="play-button" class="primary-button">ENTER THE CIRCUIT <span>↗</span></button>
+            <button id="garage-button" class="secondary-button">GARAGE <span>⌁</span></button>
+          </div>
+          <div class="menu-footnote">BROWSER DRIFT PLAYGROUND <span>•</span> AUTOSAVES LOCALLY</div>
+        </div>
+        <div class="menu-car-caption"><span>01 / 04</span><b id="menu-car-name">S15 SILHOUETTE</b><small>REAR-WHEEL DRIVE</small></div>
+        <div class="menu-side-note">NO RULES<br>JUST ANGLE.</div>
+      </section>
+
+      <section id="garage-screen" class="screen-panel hidden">
+        <div class="panel-heading"><div><div class="eyebrow">YOUR COLLECTION</div><h2>THE <em>GARAGE.</em></h2></div><button class="close-button" id="garage-close">BACK TO MENU ↗</button></div>
+        <div class="garage-layout">
+          <div class="garage-preview-copy">
+            <div class="eyebrow">CURRENT BUILD</div>
+            <h3 id="garage-car-name">S15 SILHOUETTE</h3>
+            <p id="garage-car-description">A balanced rear-drive coupe. The perfect place to start learning your angle.</p>
+            <div class="stat-list">
+              <div><span>POWER</span><b id="stat-power">280 HP</b></div>
+              <div><span>GRIP</span><b id="stat-grip">72%</b></div>
+              <div><span>STEERING</span><b id="stat-steer">42°</b></div>
+            </div>
+            <div class="car-switcher" id="car-switcher"></div>
+            <label class="field-label" for="paint-select">BODY COLOUR</label>
+            <select id="paint-select" class="field-control">
+              <option value="#c8d3e0">Arctic silver</option><option value="#a8223b">Crimson red</option><option value="#256bba">Electric blue</option><option value="#e6e2d8">Pearl white</option><option value="#20242c">Graphite black</option><option value="#a4b848">Acid green</option>
+            </select>
+          </div>
+          <div class="upgrade-panel">
+            <div class="upgrade-heading"><div><div class="eyebrow">MAKE IT YOURS</div><h3>UPGRADES</h3></div><div class="upgrade-cash">$<span id="garage-cash">25,000</span></div></div>
+            <div id="upgrade-list" class="upgrade-list"></div>
+            <div class="upgrade-note">Upgrades are saved in this browser. Earn more cash by linking long, fast drifts.</div>
+          </div>
+        </div>
+        <div class="garage-footer"><span>BUILD. TEST. REPEAT.</span><button id="garage-drive" class="primary-button">TAKE IT OUT <span>↗</span></button></div>
+      </section>
+
+      <section id="pause-screen" class="screen-panel compact-panel hidden">
+        <div class="eyebrow">TAKE A BREATHER</div><h2>DRIVE <em>PAUSED.</em></h2>
+        <button id="resume-button" class="primary-button">RESUME DRIVING <span>↗</span></button>
+        <button id="pause-garage" class="secondary-button">RETURN TO GARAGE</button>
+        <button id="pause-menu" class="text-button">MAIN MENU</button>
+      </section>
+
+      <div id="hud" class="hud hidden-ui">
+        <div class="hud-left">
+          <div class="drift-card"><div class="hud-label">CURRENT RUN</div><div class="drift-score" id="drift-score">0</div><div class="drift-meta"><span id="drift-angle">0° ANGLE</span><span id="drift-multiplier">x1.0</span></div></div>
+          <div class="combo-flash" id="combo-flash">NICE LINE!</div>
+        </div>
+        <div class="hud-right">
+          <div class="speed-card"><div class="speed-main"><strong id="speed-value">000</strong><span>KM/H</span></div><div class="speed-bottom"><span id="gear-value">N</span><div class="rpm-meter"><i id="rpm-fill"></i></div></div></div>
+          <div class="run-total"><span>BANKED THIS SESSION</span><b id="session-score">0</b></div>
+        </div>
+        <div class="hud-bottom-left"><div class="mini-tag" id="control-mode-tag">KEYBOARD</div><div class="mini-tag" id="camera-mode-tag">CHASE CAM</div></div>
+        <div class="hud-bottom-right"><button class="hud-button" id="hud-settings">SETTINGS ⚙</button><button class="hud-button" id="hud-garage">GARAGE ⌁</button></div>
+      </div>
+
+      <div id="touch-controls" class="touch-controls hidden-ui">
+        <div class="touch-steer"><button data-touch="left">◀</button><button data-touch="right">▶</button></div>
+        <div class="touch-pedals"><button data-touch="brake" class="touch-brake">BRAKE</button><button data-touch="handbrake" class="touch-handbrake">E-BRAKE</button><button data-touch="throttle" class="touch-gas">GAS</button></div>
+      </div>
+
+      <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <div class="modal-card settings-card">
+          <div class="modal-heading"><div><div class="eyebrow">MAKE IT FEEL RIGHT</div><h2 id="settings-title">SETTINGS<span>.</span></h2></div><button class="close-button" id="settings-close">CLOSE ✕</button></div>
+          <div class="settings-grid">
+            <div class="settings-section">
+              <h3>CONTROLS</h3>
+              <label class="field-label" for="input-mode">INPUT DEVICE</label>
+              <select id="input-mode" class="field-control"><option value="auto">Auto detect</option><option value="keyboard">Keyboard</option><option value="gamepad">Controller / gamepad</option><option value="wheel">Steering wheel</option><option value="touch">Touchscreen</option></select>
+              <div id="device-status" class="device-status">Looking for connected devices…</div>
+              <label class="field-label" for="steer-sensitivity">STEERING SENSITIVITY <b id="steer-sensitivity-value">70%</b></label>
+              <input id="steer-sensitivity" class="range-control" type="range" min="30" max="100" value="70" />
+              <label class="field-label" for="deadzone">STEERING DEADZONE <b id="deadzone-value">8%</b></label>
+              <input id="deadzone" class="range-control" type="range" min="0" max="25" value="8" />
+              <div class="wheel-settings" id="wheel-settings">
+                <div class="eyebrow">WHEEL AXIS MAPPING</div>
+                <div class="axis-grid">
+                  <label>Steering axis<select id="wheel-steer-axis" class="field-control small-field"><option value="0">Axis 0</option><option value="1">Axis 1</option><option value="2">Axis 2</option><option value="3">Axis 3</option></select></label>
+                  <label>Throttle axis<select id="wheel-throttle-axis" class="field-control small-field"><option value="2">Axis 2</option><option value="1">Axis 1</option><option value="3">Axis 3</option><option value="0">Axis 0</option></select></label>
+                  <label>Brake axis<select id="wheel-brake-axis" class="field-control small-field"><option value="3">Axis 3</option><option value="2">Axis 2</option><option value="1">Axis 1</option><option value="0">Axis 0</option></select></label>
+                </div>
+                <div class="toggle-row"><span>Invert throttle axis</span><input id="invert-throttle" type="checkbox" /></div>
+                <div class="toggle-row"><span>Invert brake axis</span><input id="invert-brake" type="checkbox" /></div>
+                <div class="device-status">Wheel compatibility depends on how your browser and operating system expose the device through the Gamepad API. Select axes to match your wheel.</div>
+              </div>
+            </div>
+            <div class="settings-section">
+              <h3>DRIVING</h3>
+              <label class="field-label" for="handling-mode">HANDLING PRESET</label>
+              <select id="handling-mode" class="field-control"><option value="arcade">Arcade — easy to slide</option><option value="balanced" selected>Balanced — street setup</option><option value="sim">Simcade — less assistance</option></select>
+              <label class="field-label" for="transmission-mode">TRANSMISSION</label>
+              <select id="transmission-mode" class="field-control"><option value="auto">Automatic</option><option value="manual">Manual (Q / E or paddles)</option></select>
+              <label class="field-label" for="camera-mode">CAMERA</label>
+              <select id="camera-mode" class="field-control"><option value="chase">Third-person chase</option><option value="hood">Hood camera</option><option value="cockpit">Cockpit view</option></select>
+              <label class="field-label" for="graphics-mode">GRAPHICS</label>
+              <select id="graphics-mode" class="field-control"><option value="high">High</option><option value="medium">Medium</option><option value="low">Performance</option></select>
+              <div class="toggle-row"><span>Driving assists</span><input id="driving-assists" type="checkbox" checked /></div>
+              <div class="toggle-row"><span>Engine & tyre sounds</span><input id="sound-enabled" type="checkbox" checked /></div>
+            </div>
+          </div>
+          <div class="settings-footer"><span>Changes apply immediately. Progress saves locally.</span><button id="settings-done" class="primary-button">DONE <span>✓</span></button></div>
+        </div>
+      </div>
+
+      <div id="toast" class="toast"></div>
+      <div id="game-hint" class="game-hint hidden-ui">WASD / ARROWS DRIVE <span>SPACE</span> E-BRAKE <span>SHIFT</span> BOOST <span>ESC</span> PAUSE</div>
+    </div>
+  </div>
+  <script type="module" src="assets/js/main.js"></script>
+</body>
+</html>
