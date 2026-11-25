@@ -45,6 +45,7 @@
           <div class="menu-actions">
             <button id="play-button" class="primary-button">ENTER THE CIRCUIT <span>↗</span></button>
             <button id="garage-button" class="secondary-button">GARAGE <span>⌁</span></button>
+            <button id="multiplayer-open" class="secondary-button multiplayer-menu-button">MULTIPLAYER <span>◎</span></button>
           </div>
           <div class="menu-footnote">BROWSER DRIFT PLAYGROUND <span>•</span> AUTOSAVES LOCALLY</div>
         </div>
@@ -144,6 +145,31 @@
             </div>
           </div>
           <div class="settings-footer"><span>Changes apply immediately. Progress saves locally.</span><button id="settings-done" class="primary-button">DONE <span>✓</span></button></div>
+        </div>
+      </div>
+
+      <div id="multiplayer-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="multiplayer-title">
+        <div class="modal-card multiplayer-card">
+          <div class="modal-heading">
+            <div><div class="eyebrow">MEET UP AND SLIDE</div><h2 id="multiplayer-title">MULTIPLAYER<span>.</span></h2></div>
+            <button class="close-button" id="multiplayer-close">CLOSE ✕</button>
+          </div>
+          <div class="multiplayer-intro">Create a room and send your friends the code, or join a room they already made. Your game stays on GitHub Pages; the live room runs on the cloud server.</div>
+          <label class="field-label" for="mp-player-name">DRIVER NAME</label>
+          <input id="mp-player-name" class="field-control" maxlength="18" value="DRIFTER" autocomplete="nickname" />
+          <label class="field-label" for="mp-server-url">CLOUDFLARE WORKER URL</label>
+          <input id="mp-server-url" class="field-control" placeholder="https://slide-cult-multiplayer.your-name.workers.dev" autocomplete="url" />
+          <div class="multiplayer-actions">
+            <button id="mp-create" class="primary-button">CREATE ROOM <span>＋</span></button>
+            <div class="join-room-row"><input id="mp-room-code" class="field-control" maxlength="8" placeholder="ROOM CODE" autocomplete="off" /><button id="mp-join" class="secondary-button">JOIN ↗</button></div>
+          </div>
+          <div class="multiplayer-room-status">
+            <div><span class="online-dot" id="mp-status-dot"></span><b id="mp-status">OFFLINE</b></div>
+            <div class="room-code-line"><span>ROOM</span><strong id="mp-current-room">—</strong><button id="mp-copy-room" class="tiny-button" disabled>COPY</button><button id="mp-leave" class="tiny-button" disabled>LEAVE</button></div>
+          </div>
+          <div class="players-heading"><span>DRIVERS IN ROOM</span><small id="mp-player-count">0 / 8</small></div>
+          <div id="mp-players-list" class="players-list"><span class="players-empty">No room connected yet.</span></div>
+          <div class="multiplayer-footnote">Free-tier rooms support up to 8 drivers. Live positions are sent at a low bandwidth rate to help stay within free hosting limits.</div>
         </div>
       </div>
 

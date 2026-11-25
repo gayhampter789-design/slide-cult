@@ -1,6 +1,6 @@
 # SLIDE CULT — Browser Drift Playground
 
-A multi-file, browser-based 3D drift game built with Three.js. It runs directly on a static host such as GitHub Pages; there is no backend, build step, or API key.
+A multi-file, browser-based 3D drift game built with Three.js. The single-player build runs on a static host such as GitHub Pages. Optional real-time multiplayer uses a small Cloudflare Worker + Durable Object WebSocket backend; it does not run on your computer.
 
 ## Run it
 
@@ -30,6 +30,52 @@ The Three.js library is loaded from jsDelivr, so the first load requires an inte
 4. Under **Build and deployment**, select **Deploy from a branch**.
 5. Select `main` and `/ (root)`, then save.
 6. Open the Pages URL GitHub gives you.
+
+
+## Multiplayer (Cloudflare Free plan)
+
+Multiplayer is optional. The game website remains on GitHub Pages, while room connections are handled by Cloudflare's hosted Durable Objects. Your computer is only needed to deploy the server once; it does not need to stay running after deployment.
+
+### Deploy the room server
+
+1. Create or sign in to a Cloudflare account.
+2. Install a current Node.js LTS release on your computer.
+3. Open a terminal in `multiplayer-worker`.
+4. Run:
+
+   ```bash
+   npm install
+   npx wrangler login
+   npx wrangler deploy
+   ```
+
+5. Wrangler prints a URL similar to `https://slide-cult-multiplayer.YOUR-SUBDOMAIN.workers.dev`. Copy it.
+6. Open the published SLIDE CULT website, choose **Multiplayer**, paste the Worker URL into **Cloudflare Worker URL**, and save/create a room.
+7. Give your friends the same room code. They use the same website and Worker URL, then enter that code to join.
+
+The Worker uses the SQLite-backed Durable Object binding declared in `wrangler.toml`, which is the Durable Object storage option available on Cloudflare Workers Free. The project does not require a database, API key, VPS, always-on home server, or a paid plan.
+
+### Free-tier limits and realistic expectations
+
+- Rooms are capped at 8 players.
+- The browser sends position updates at 5 times per second, with interpolation between updates to make remote cars move smoothly.
+- Cloudflare's current Free plan includes 100,000 Durable Object requests per day and 13,000 GB-seconds of compute duration per day. The separate Workers Free plan also has a 100,000-request daily quota.
+- On the Free plan, operations that exceed a quota fail until the daily quota resets; the app does not automatically switch itself to a paid plan.
+- Keep the Cloudflare account on the **Workers Free** plan. Do not upgrade to Workers Paid if you need to keep the setup at $0.
+- No provider can promise a free service forever. Cloudflare can change its plans or limits, so this setup is **free on the current Free plan, not a lifetime guarantee**.
+- Room membership and car positions are temporary. There is no account system, chat, persistent room list, or server-authoritative anti-cheat in this prototype.
+
+Cloudflare's current limits and pricing are documented here:
+- https://developers.cloudflare.com/durable-objects/platform/pricing/
+- https://developers.cloudflare.com/durable-objects/best-practices/websockets/
+
+### Update the multiplayer server
+
+When changing the Worker code, deploy it again from `multiplayer-worker`:
+
+```bash
+npx wrangler deploy
+```
 
 ## Controls
 
